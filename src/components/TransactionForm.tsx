@@ -1,4 +1,4 @@
-import { useState, useEffect, FormEvent } from 'react';
+import { useState, useEffect, FormEvent, ChangeEvent } from 'react';
 import { motion } from 'motion/react';
 import {
   PlusCircle,
@@ -18,7 +18,10 @@ import {
   Film,
   HeartPulse,
   Wallet,
-  HelpCircle
+  HelpCircle,
+  Camera,
+  Image,
+  X
 } from 'lucide-react';
 import {
   Transaction,
@@ -46,6 +49,7 @@ export default function TransactionForm({
   const [category, setCategory] = useState<string>('');
   const [date, setDate] = useState<string>('');
   const [description, setDescription] = useState<string>('');
+  const [imageUrl, setImageUrl] = useState<string>('');
   const [error, setError] = useState<string>('');
 
   // Get current date formatted as YYYY-MM-DD
@@ -65,6 +69,7 @@ export default function TransactionForm({
       setCategory(editingTransaction.category);
       setDate(editingTransaction.date);
       setDescription(editingTransaction.description);
+      setImageUrl(editingTransaction.imageUrl || '');
     } else {
       // Set default date matching the active month
       const today = getTodayDateString();
@@ -88,6 +93,7 @@ export default function TransactionForm({
   const resetForm = () => {
     setAmount('');
     setDescription('');
+    setImageUrl('');
     setError('');
     if (!editingTransaction) {
       const activeCategories = type === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
@@ -122,6 +128,7 @@ export default function TransactionForm({
       category,
       date,
       description: description.trim() || `${type === 'income' ? 'Pemasukan' : 'Pengeluaran'} Kategori ${category}`,
+      imageUrl: imageUrl || undefined,
     });
 
     resetForm();
@@ -131,6 +138,21 @@ export default function TransactionForm({
   const handleAmountChange = (val: string) => {
     const digitsOnly = val.replace(/\D/g, '');
     setAmount(digitsOnly);
+  };
+
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 2 * 1024 * 1024) { // 2MB size limit
+        setError('Ukuran gambar terlalu besar. Maksimal adalah 2MB.');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImageUrl(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const activeCategories = type === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
@@ -293,6 +315,49 @@ export default function TransactionForm({
             placeholder="Contoh: Beli makan siang, bonus proyek..."
             className="block w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 text-sm font-medium placeholder:text-slate-400 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
           />
+        </div>
+
+        {/* Upload Gambar (Optional) */}
+        <div>
+          <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-1.5 font-sans">
+            Upload Gambar / Kuitansi (Opsional)
+          </label>
+          {imageUrl ? (
+            <div className="relative rounded-xl border border-slate-200 p-2 bg-slate-50 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <img
+                  src={imageUrl}
+                  alt="Bukti transaksi"
+                  className="w-12 h-12 rounded-lg object-cover border border-slate-200"
+                  referrerPolicy="no-referrer"
+                />
+                <div className="min-w-0">
+                  <span className="text-xs font-bold text-slate-700 block truncate">Gambar Bukti Transaksi</span>
+                  <span className="text-[10px] text-emerald-600 font-semibold block">Gambar berhasil dimuat</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setImageUrl('')}
+                className="p-1.5 hover:bg-red-50 text-slate-400 hover:text-red-500 rounded-lg transition-colors cursor-pointer animate-pulse"
+                title="Hapus Gambar"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          ) : (
+            <div className="relative border-2 border-dashed border-slate-200 hover:border-indigo-400 rounded-xl p-4 bg-slate-50/50 hover:bg-indigo-50/10 transition-all flex flex-col items-center justify-center text-center cursor-pointer">
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleFileChange}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+              />
+              <Camera className="w-6 h-6 text-slate-400 mb-1.5" />
+              <p className="text-xs font-semibold text-slate-600">Klik atau seret gambar di sini</p>
+              <p className="text-[10px] text-slate-400 mt-0.5">Format: JPG, PNG, WEBP (Maksimal 2MB)</p>
+            </div>
+          )}
         </div>
 
         {/* Error Feedback */}

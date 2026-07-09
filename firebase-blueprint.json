@@ -1,0 +1,78 @@
+{
+  "entities": {
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Catatan transaksi pemasukan atau pengeluaran keuangan bulanan",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "ID unik transaksi"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["income", "expense"],
+          "description": "Tipe transaksi: pemasukan atau pengeluaran"
+        },
+        "amount": {
+          "type": "number",
+          "description": "Jumlah uang dalam Rupiah"
+        },
+        "category": {
+          "type": "string",
+          "description": "Nama kategori transaksi"
+        },
+        "date": {
+          "type": "string",
+          "format": "date",
+          "description": "Tanggal transaksi YYYY-MM-DD"
+        },
+        "description": {
+          "type": "string",
+          "description": "Keterangan atau catatan tambahan"
+        },
+        "imageUrl": {
+          "type": "string",
+          "description": "Data URI Base64 opsional untuk gambar kuitansi atau bukti transaksi"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Waktu pembuatan data di database"
+        }
+      },
+      "required": ["id", "type", "amount", "category", "date"]
+    },
+    "Budget": {
+      "title": "Budget",
+      "description": "Limit anggaran per kategori pengeluaran",
+      "type": "object",
+      "properties": {
+        "category": {
+          "type": "string",
+          "description": "Nama kategori pengeluaran"
+        },
+        "limit": {
+          "type": "number",
+          "description": "Limit maksimal pengeluaran bulanan dalam Rupiah"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Waktu pembaruan limit anggaran"
+        }
+      },
+      "required": ["category", "limit"]
+    }
+  },
+  "firestore": {
+    "/transactions/{transactionId}": {
+      "schema": "Transaction",
+      "description": "Koleksi semua transaksi keuangan pengguna"
+    },
+    "/budgets/{budgetId}": {
+      "schema": "Budget",
+      "description": "Koleksi limit anggaran bulanan per kategori"
+    }
+  }
+}

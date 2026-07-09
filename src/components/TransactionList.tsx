@@ -20,7 +20,9 @@ import {
   Wallet,
   HelpCircle,
   Download,
-  AlertCircle
+  AlertCircle,
+  Image,
+  X
 } from 'lucide-react';
 import { Transaction, INCOME_CATEGORIES, EXPENSE_CATEGORIES } from '../types';
 import { formatRupiah, formatIndoDate } from '../utils';
@@ -43,6 +45,7 @@ export default function TransactionList({
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'date-desc' | 'date-asc' | 'amount-desc' | 'amount-asc'>('date-desc');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
   // Filter transactions for current selected month
   const currentMonthTxs = transactions.filter((tx) => tx.date.startsWith(selectedMonth));
@@ -267,6 +270,17 @@ export default function TransactionList({
                         }`}>
                           {tx.category}
                         </span>
+                        {tx.imageUrl && (
+                          <button
+                            type="button"
+                            onClick={() => setSelectedImage(tx.imageUrl || null)}
+                            className="inline-flex items-center gap-1.5 text-[10px] bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold px-1.5 py-0.5 rounded-sm transition-colors cursor-pointer"
+                            title="Lihat Gambar Bukti Transaksi"
+                          >
+                            <Image className="w-3 h-3" />
+                            <span>Kuitansi</span>
+                          </button>
+                        )}
                       </div>
                       <span className="text-xs text-slate-400 font-sans block mt-0.5">
                         {formatIndoDate(tx.date)}
@@ -339,6 +353,54 @@ export default function TransactionList({
           )}
         </AnimatePresence>
       </div>
+
+      {/* Lightbox / Image Preview Modal */}
+      <AnimatePresence>
+        {selectedImage && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setSelectedImage(null)}
+            className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.95 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0.95 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white rounded-2xl max-w-lg w-full overflow-hidden shadow-2xl relative"
+            >
+              <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+                <h4 className="font-bold text-slate-800 text-sm">Bukti Transaksi / Kuitansi</h4>
+                <button
+                  onClick={() => setSelectedImage(null)}
+                  className="p-1 hover:bg-slate-100 text-slate-400 hover:text-slate-600 rounded-lg transition-colors cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="p-4 bg-slate-950 flex items-center justify-center min-h-[300px] max-h-[70vh]">
+                <img
+                  src={selectedImage}
+                  alt="Bukti Transaksi"
+                  className="max-w-full max-h-[60vh] object-contain rounded-lg shadow-md"
+                  referrerPolicy="no-referrer"
+                />
+              </div>
+              <div className="p-3 bg-slate-50 text-center">
+                <button
+                  type="button"
+                  onClick={() => setSelectedImage(null)}
+                  className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl text-xs transition-colors cursor-pointer"
+                >
+                  Tutup Pratinjau
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

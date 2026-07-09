@@ -7,6 +7,7 @@ export interface Transaction {
   category: string;
   date: string; // format: YYYY-MM-DD
   description: string;
+  imageUrl?: string; // Base64 Data URL for optional receipts/images
 }
 
 export interface CategoryBudget {

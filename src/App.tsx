@@ -12,33 +12,26 @@ import {
   HelpCircle,
   Sparkles,
   RefreshCw,
-  Info
+  Info,
+  Cloud,
+  CloudLightning,
+  CloudOff,
+  Loader2
 } from 'lucide-react';
 import { Transaction, CategoryBudget } from './types';
 import { getInitialTransactions, getInitialBudgets, formatRupiah, formatMonthName } from './utils';
+import { collection, doc, setDoc, deleteDoc, onSnapshot, getDocs } from 'firebase/firestore';
+import { db } from './lib/firebase';
 import Dashboard from './components/Dashboard';
 import TransactionForm from './components/TransactionForm';
 import CategoryBudgets from './components/CategoryBudgets';
 import TransactionList from './components/TransactionList';
 
 export default function App() {
-  const [transactions, setTransactions] = useState<Transaction[]>(() => {
-    try {
-      const saved = localStorage.getItem('manajemen_keuangan_txs');
-      return saved ? JSON.parse(saved) : getInitialTransactions();
-    } catch {
-      return getInitialTransactions();
-    }
-  });
-
-  const [budgets, setBudgets] = useState<CategoryBudget[]>(() => {
-    try {
-      const saved = localStorage.getItem('manajemen_keuangan_budgets');
-      return saved ? JSON.parse(saved) : getInitialBudgets();
-    } catch {
-      return getInitialBudgets();
-    }
-  });
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [budgets, setBudgets] = useState<CategoryBudget[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [dbStatus, setDbStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
 
   // Keep track of the active view tab
   const [activeTab, setActiveTab] = useState<'dashboard' | 'transactions' | 'budgets' | 'history'>('dashboard');
@@ -49,14 +42,70 @@ export default function App() {
   // Track transaction currently being edited
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
 
-  // Sync state to localStorage
+  // Load transactions and budgets from Firestore in real-time
   useEffect(() => {
-    localStorage.setItem('manajemen_keuangan_txs', JSON.stringify(transactions));
-  }, [transactions]);
+    setDbStatus('connecting');
+    const unsubscribeTxs = onSnapshot(
+      collection(db, 'transactions'),
+      async (snapshot) => {
+        if (snapshot.empty) {
+          // If Firestore is empty, seed it with initial defaults
+          try {
+            const initialTxs = getInitialTransactions();
+            for (const tx of initialTxs) {
+              await setDoc(doc(db, 'transactions', tx.id), tx);
+            }
+          } catch (err) {
+            console.error("Gagal menyemai transaksi awal:", err);
+          }
+        } else {
+          const list: Transaction[] = [];
+          snapshot.forEach((docSnap) => {
+            list.push({ id: docSnap.id, ...docSnap.data() } as Transaction);
+          });
+          setTransactions(list);
+          setDbStatus('connected');
+          setIsLoading(false);
+        }
+      },
+      (err) => {
+        console.error("Firestore transactions sync error:", err);
+        setDbStatus('error');
+        setIsLoading(false);
+      }
+    );
 
-  useEffect(() => {
-    localStorage.setItem('manajemen_keuangan_budgets', JSON.stringify(budgets));
-  }, [budgets]);
+    const unsubscribeBudgets = onSnapshot(
+      collection(db, 'budgets'),
+      async (snapshot) => {
+        if (snapshot.empty) {
+          // Seed budgets
+          try {
+            const initialBudgets = getInitialBudgets();
+            for (const b of initialBudgets) {
+              await setDoc(doc(db, 'budgets', b.category), b);
+            }
+          } catch (err) {
+            console.error("Gagal menyemai budget awal:", err);
+          }
+        } else {
+          const list: CategoryBudget[] = [];
+          snapshot.forEach((docSnap) => {
+            list.push(docSnap.data() as CategoryBudget);
+          });
+          setBudgets(list);
+        }
+      },
+      (err) => {
+        console.error("Firestore budgets sync error:", err);
+      }
+    );
+
+    return () => {
+      unsubscribeTxs();
+      unsubscribeBudgets();
+    };
+  }, []);
 
   // Extract all distinct months (YYYY-MM) available in current transactions to populate select dropdown
   const availableMonths = useMemo(() => {
@@ -73,30 +122,33 @@ export default function App() {
   }, [transactions]);
 
   // Handle adding or editing a transaction
-  const handleSaveTransaction = (savedTx: Omit<Transaction, 'id'> & { id?: string }) => {
-    if (savedTx.id) {
-      // Edit mode
-      setTransactions((prev) =>
-        prev.map((t) => (t.id === savedTx.id ? (savedTx as Transaction) : t))
-      );
-      setEditingTransaction(null);
-    } else {
-      // Add mode
-      const newTx: Transaction = {
+  const handleSaveTransaction = async (savedTx: Omit<Transaction, 'id'> & { id?: string }) => {
+    try {
+      const id = savedTx.id || `tx-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const txData = {
         ...savedTx,
-        id: `tx-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        id,
       };
-      setTransactions((prev) => [newTx, ...prev]);
+      await setDoc(doc(db, 'transactions', id), txData);
+      setEditingTransaction(null);
+      // Automatically switch to dashboard view after saving
+      setActiveTab('dashboard');
+    } catch (err) {
+      console.error("Gagal menyimpan transaksi ke Firestore:", err);
+      alert("Gagal menyimpan data ke database cloud. Silakan coba lagi.");
     }
-    // Automatically switch to dashboard or history view after saving
-    setActiveTab('dashboard');
   };
 
   // Handle deleting a transaction
-  const handleDeleteTransaction = (id: string) => {
-    setTransactions((prev) => prev.filter((t) => t.id !== id));
-    if (editingTransaction?.id === id) {
-      setEditingTransaction(null);
+  const handleDeleteTransaction = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'transactions', id));
+      if (editingTransaction?.id === id) {
+        setEditingTransaction(null);
+      }
+    } catch (err) {
+      console.error("Gagal menghapus transaksi dari Firestore:", err);
+      alert("Gagal menghapus data dari database cloud.");
     }
   };
 
@@ -107,25 +159,54 @@ export default function App() {
   };
 
   // Handle saving customized category budget
-  const handleSaveBudget = (category: string, limit: number) => {
-    setBudgets((prev) => {
-      const exists = prev.some((b) => b.category === category);
-      if (exists) {
-        return prev.map((b) => (b.category === category ? { ...b, limit } : b));
-      } else {
-        return [...prev, { category, limit }];
-      }
-    });
+  const handleSaveBudget = async (category: string, limit: number) => {
+    try {
+      await setDoc(doc(db, 'budgets', category), { category, limit });
+    } catch (err) {
+      console.error("Gagal menyimpan limit anggaran ke Firestore:", err);
+      alert("Gagal memperbarui anggaran ke database cloud.");
+    }
   };
 
   // Clear data back to mock defaults
-  const handleResetToDefaults = () => {
-    if (window.confirm('Apakah Anda yakin ingin meriset semua data keuangan kembali ke contoh bawaan?')) {
-      setTransactions(getInitialTransactions());
-      setBudgets(getInitialBudgets());
-      setSelectedMonth('2026-07');
-      setActiveTab('dashboard');
-      setEditingTransaction(null);
+  const handleResetToDefaults = async () => {
+    if (window.confirm('Apakah Anda yakin ingin meriset semua data keuangan kembali ke contoh bawaan di database cloud?')) {
+      try {
+        setDbStatus('connecting');
+        setIsLoading(true);
+        // Delete all current transactions
+        const txSnap = await getDocs(collection(db, 'transactions'));
+        for (const docSnap of txSnap.docs) {
+          await deleteDoc(doc(db, 'transactions', docSnap.id));
+        }
+        // Delete all budgets
+        const bSnap = await getDocs(collection(db, 'budgets'));
+        for (const docSnap of bSnap.docs) {
+          await deleteDoc(doc(db, 'budgets', docSnap.id));
+        }
+
+        // Re-seed transactions
+        const initialTxs = getInitialTransactions();
+        for (const tx of initialTxs) {
+          await setDoc(doc(db, 'transactions', tx.id), tx);
+        }
+
+        // Re-seed budgets
+        const initialBudgets = getInitialBudgets();
+        for (const b of initialBudgets) {
+          await setDoc(doc(db, 'budgets', b.category), b);
+        }
+
+        setSelectedMonth('2026-07');
+        setActiveTab('dashboard');
+        setEditingTransaction(null);
+        setDbStatus('connected');
+        setIsLoading(false);
+      } catch (err) {
+        console.error("Gagal meriset data:", err);
+        setDbStatus('error');
+        setIsLoading(false);
+      }
     }
   };
 
@@ -172,6 +253,28 @@ export default function App() {
 
           {/* User Email Info / Default Branding */}
           <div className="flex items-center gap-4">
+            {/* Database Connection Status badge */}
+            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-full text-[10px] font-bold">
+              {dbStatus === 'connecting' && (
+                <>
+                  <Loader2 className="w-3 h-3 text-amber-500 animate-spin" />
+                  <span className="text-amber-600 hidden xs:inline">Sinkronisasi Cloud...</span>
+                </>
+              )}
+              {dbStatus === 'connected' && (
+                <>
+                  <Cloud className="w-3 h-3 text-emerald-500" />
+                  <span className="text-emerald-600 hidden xs:inline">Database Terhubung</span>
+                </>
+              )}
+              {dbStatus === 'error' && (
+                <>
+                  <CloudOff className="w-3 h-3 text-red-500" />
+                  <span className="text-red-600 hidden xs:inline">Database Offline</span>
+                </>
+              )}
+            </div>
+
             <div className="hidden md:block text-right">
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Akun Aktif</span>
               <span className="text-xs font-semibold text-slate-600">zainul@smktelkom-mlg.sch.id</span>
@@ -285,92 +388,102 @@ export default function App() {
 
         {/* Tab Views Render Stage */}
         <main className="flex-1">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={activeTab + selectedMonth}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.15 }}
-              className="h-full"
-            >
-              {activeTab === 'dashboard' && (
-                <Dashboard
-                  transactions={transactions}
-                  budgets={budgets}
-                  selectedMonth={selectedMonth}
-                  onMonthChange={setSelectedMonth}
-                  availableMonths={availableMonths}
-                />
-              )}
+          {isLoading ? (
+            <div className="flex flex-col items-center justify-center py-24 text-slate-400 font-sans gap-3 bg-white rounded-2xl border border-slate-100 shadow-xs">
+              <Loader2 className="w-8 h-8 text-indigo-600 animate-spin" />
+              <div className="text-center">
+                <p className="font-semibold text-sm text-slate-700">Sinkronisasi Database Cloud</p>
+                <p className="text-xs text-slate-400 mt-0.5">Memuat catatan keuangan terbaru Anda secara aman...</p>
+              </div>
+            </div>
+          ) : (
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={activeTab + selectedMonth}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.15 }}
+                className="h-full"
+              >
+                {activeTab === 'dashboard' && (
+                  <Dashboard
+                    transactions={transactions}
+                    budgets={budgets}
+                    selectedMonth={selectedMonth}
+                    onMonthChange={setSelectedMonth}
+                    availableMonths={availableMonths}
+                  />
+                )}
 
-              {activeTab === 'transactions' && (
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  <div className="lg:col-span-2">
-                    <TransactionForm
-                      onSave={handleSaveTransaction}
-                      editingTransaction={editingTransaction}
-                      onCancelEdit={() => {
-                        setEditingTransaction(null);
-                        setActiveTab('dashboard');
-                      }}
-                      selectedMonth={selectedMonth}
-                    />
-                  </div>
-                  
-                  {/* Sidebar Tip Card */}
-                  <div className="space-y-4">
-                    <div className="bg-indigo-900 text-indigo-100 p-6 rounded-2xl shadow-xs relative overflow-hidden">
-                      <div className="relative z-10 space-y-3">
-                        <span className="text-[10px] font-extrabold uppercase tracking-widest bg-indigo-800 text-indigo-200 px-2 py-0.5 rounded-md">
-                          Tips Cerdas Keuangan
-                        </span>
-                        <h4 className="font-bold text-sm font-sans">Formula Budgeting 50/30/20</h4>
-                        <p className="text-xs text-indigo-200 leading-relaxed">
-                          Alokasikan pendapatan bulanan Anda dengan rasio seimbang:
-                        </p>
-                        <div className="space-y-1.5 text-xs">
-                          <div className="flex justify-between border-b border-indigo-800 pb-1">
-                            <span>🏠 Kebutuhan Pokok (Sewa, Tagihan)</span>
-                            <span className="font-bold">50%</span>
-                          </div>
-                          <div className="flex justify-between border-b border-indigo-800 pb-1">
-                            <span>🛍️ Keinginan Pribadi (Hiburan, Kopi)</span>
-                            <span className="font-bold">30%</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>📈 Tabungan & Investasi</span>
-                            <span className="font-bold">20%</span>
+                {activeTab === 'transactions' && (
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div className="lg:col-span-2">
+                      <TransactionForm
+                        onSave={handleSaveTransaction}
+                        editingTransaction={editingTransaction}
+                        onCancelEdit={() => {
+                          setEditingTransaction(null);
+                          setActiveTab('dashboard');
+                        }}
+                        selectedMonth={selectedMonth}
+                      />
+                    </div>
+                    
+                    {/* Sidebar Tip Card */}
+                    <div className="space-y-4">
+                      <div className="bg-indigo-900 text-indigo-100 p-6 rounded-2xl shadow-xs relative overflow-hidden">
+                        <div className="relative z-10 space-y-3">
+                          <span className="text-[10px] font-extrabold uppercase tracking-widest bg-indigo-800 text-indigo-200 px-2 py-0.5 rounded-md">
+                            Tips Cerdas Keuangan
+                          </span>
+                          <h4 className="font-bold text-sm font-sans">Formula Budgeting 50/30/20</h4>
+                          <p className="text-xs text-indigo-200 leading-relaxed">
+                            Alokasikan pendapatan bulanan Anda dengan rasio seimbang:
+                          </p>
+                          <div className="space-y-1.5 text-xs">
+                            <div className="flex justify-between border-b border-indigo-800 pb-1">
+                              <span>🏠 Kebutuhan Pokok (Sewa, Tagihan)</span>
+                              <span className="font-bold">50%</span>
+                            </div>
+                            <div className="flex justify-between border-b border-indigo-800 pb-1">
+                              <span>🛍️ Keinginan Pribadi (Hiburan, Kopi)</span>
+                              <span className="font-bold">30%</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>📈 Tabungan & Investasi</span>
+                              <span className="font-bold">20%</span>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                      <div className="absolute right-0 bottom-0 translate-x-4 translate-y-4 opacity-10">
-                        <Wallet className="w-40 h-40" />
+                        <div className="absolute right-0 bottom-0 translate-x-4 translate-y-4 opacity-10">
+                          <Wallet className="w-40 h-40" />
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              {activeTab === 'budgets' && (
-                <CategoryBudgets
-                  budgets={budgets}
-                  onSaveBudget={handleSaveBudget}
-                  transactions={transactions}
-                  selectedMonth={selectedMonth}
-                />
-              )}
+                {activeTab === 'budgets' && (
+                  <CategoryBudgets
+                    budgets={budgets}
+                    onSaveBudget={handleSaveBudget}
+                    transactions={transactions}
+                    selectedMonth={selectedMonth}
+                  />
+                )}
 
-              {activeTab === 'history' && (
-                <TransactionList
-                  transactions={transactions}
-                  onEdit={handleEditTransaction}
-                  onDelete={handleDeleteTransaction}
-                  selectedMonth={selectedMonth}
-                />
-              )}
-            </motion.div>
-          </AnimatePresence>
+                {activeTab === 'history' && (
+                  <TransactionList
+                    transactions={transactions}
+                    onEdit={handleEditTransaction}
+                    onDelete={handleDeleteTransaction}
+                    selectedMonth={selectedMonth}
+                  />
+                )}
+              </motion.div>
+            </AnimatePresence>
+          )}
         </main>
 
       </div>
@@ -382,7 +495,7 @@ export default function App() {
             Manajemen Keuangan Gaji © 2026. Hak Cipta Dilindungi Undang-Undang.
           </p>
           <p className="text-[10px] text-slate-400 font-sans max-w-md mx-auto">
-            Aplikasi ini mendata pengeluaran langsung secara lokal di peramban Anda untuk privasi maksimal tanpa pengiriman rahasia keluar.
+            Aplikasi ini mendata pengeluaran secara real-time dan aman langsung ke database cloud Firestore Anda untuk kemudahan akses.
           </p>
         </div>
       </footer>

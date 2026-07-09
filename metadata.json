@@ -1,6 +1,6 @@
 {
   "name": "Manajemen Keuangan Gaji",
-  "description": "Aplikasi manajemen keuangan gaji dari pemasukan sampai pengeluaran serta laporan bulanan informatif dengan grafik visual.",
+  "description": "Aplikasi manajemen keuangan gaji dari pemasukan sampai pengeluaran, dilengkapi dengan database cloud real-time, upload kuitansi gambar, dan laporan bulanan informatif dengan grafik visual.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
